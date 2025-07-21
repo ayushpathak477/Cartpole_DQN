@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RL Warehouse Agent</title>
+    <style>
+        /* --- NEW: CSS Variables for Theming --- */
+        :root {
+            --bg-color: #f0f2f5;
+            --text-color: #1c1e21;
+            --grid-bg-color: #fff;
+            --grid-border-color: #ccc;
+            --cell-bg-color: #f7f7f7;
+            --button-bg-color: #4a90e2;
+            --button-hover-bg-color: #357ABD;
+            --best-run-bg-color: #7ed321;
+            --best-run-hover-bg-color: #68b318;
+        }
+
+        /* --- NEW: Dark Mode Color Palette --- */
+        body.dark-mode {
+            --bg-color: #18191a;
+            --text-color: #e4e6eb;
+            --grid-bg-color: #242526;
+            --grid-border-color: #3a3b3c;
+            --cell-bg-color: #3a3b3c;
+            --button-bg-color: #2d88ff;
+            --button-hover-bg-color: #579dff;
+            --best-run-bg-color: #5ad43a;
+            --best-run-hover-bg-color: #72da57;
+        }
+
+        /* --- Styles now use variables --- */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            margin-top: 2rem;
+            background-color: var(--bg-color); 
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        h1 { color: var(--text-color); }
+        #grid-container {
+            display: grid;
+            grid-template-columns: repeat(8, 50px);
+            grid-template-rows: repeat(8, 50px);
+            gap: 3px;
+            border: 3px solid var(--grid-border-color);
+            background-color: var(--grid-bg-color);
+            padding: 5px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .grid-cell {
+            width: 50px;
+            height: 50px;
+            background-color: var(--cell-bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 28px;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+        .agent { background-color: #4a90e2; color: white; }
+        .target { background-color: #7ed321; color: white; }
+        .obstacle { background-color: #d0021b; color: white; }
+        #controls { margin-top: 20px; display: flex; gap: 10px; }
+        button { 
+            font-size: 16px; 
+            padding: 10px 20px; 
+            cursor: pointer; 
+            border-radius: 6px; 
+            border: none; 
+            color: white; 
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        #reset-button { background-color: var(--button-bg-color); }
+        #reset-button:hover { background-color: var(--button-hover-bg-color); }
+        #best-run-button { background-color: var(--best-run-bg-color); }
+        #best-run-button:hover { background-color: var(--best-run-hover-bg-color); }
+        /* --- NEW: Style for the theme toggle button --- */
+        #theme-toggle-button { background-color: #6c757d; }
+        #theme-toggle-button:hover { background-color: #5a6268; }
+    </style>
+</head>
+<body>
+    <h1>Warehouse Robot Simulation</h1>
+    <div id="grid-container"></div>
+    <div id="controls">
+        <button id="reset-button">Run Random Simulation</button>
+        <button id="best-run-button">Show Best Run</button>
+        <button id="theme-toggle-button">Toggle Theme</button>
+    </div>
+
+    <script>
+        const gridContainer = document.getElementById('grid-container');
+        const resetButton = document.getElementById('reset-button');
+        const bestRunButton = document.getElementById('best-run-button');
+        // --- NEW: Get reference to the new button ---
+        const themeToggleButton = document.getElementById('theme-toggle-button');
+
+        const gridSize = 8;
+        let currentState = [];
+        let isSimulating = false;
+
+        function drawGrid(state) { /* This function is unchanged */
+            gridContainer.innerHTML = '';
+            for (let i = 0; i < state.length; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('grid-cell');
+                if (state[i] === 1) {
+                    cell.classList.add('agent');
+                    cell.innerText = '🤖';
+                } else if (state[i] === 2) {
+                    cell.classList.add('obstacle');
+                    cell.innerText = 'X';
+                } else if (state[i] === 3) {
+                    cell.classList.add('target');
+                    cell.innerText = 'T';
+                }
+                gridContainer.appendChild(cell);
+            }
+        }
+
+        async function runSimulation() { /* This function is unchanged */
+            if (currentState.length === 0 || isSimulating) return;
+            isSimulating = true;
+            let done = false;
+            let finalReward = 0;
+            while (!done) {
+                const response = await fetch('/step', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ state: currentState })
+                });
+                const data = await response.json();
+                currentState = data.next_state;
+                done = data.done;
+                finalReward = data.reward;
+                drawGrid(currentState);
+                await new Promise(resolve => setTimeout(resolve, 150));
+            }
+            if (finalReward > 0) {
+                alert('Success! The agent reached the target. ✅');
+            } else {
+                alert('Failure. The agent did not reach the target. ❌');
+            }
+            isSimulating = false;
+        }
+
+        async function resetEnvironment(useGoodSeed = false) { /* This function is unchanged */
+            if(isSimulating) return;
+            const url = useGoodSeed ? '/reset_good_seed' : '/reset';
+            try {
+                const response = await fetch(url, { method: 'POST' });
+                const data = await response.json();
+                currentState = data.state;
+                drawGrid(currentState);
+                runSimulation();
+            } catch (error) {
+                console.error("Failed to reset environment:", error);
+                alert("Error communicating with the server.");
+            }
+        }
+
+        resetButton.addEventListener('click', () => resetEnvironment(false));
+        bestRunButton.addEventListener('click', () => resetEnvironment(true));
+
+        // --- NEW: Logic for Theme Toggling ---
+        themeToggleButton.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            // Save user's preference in their browser
+            if (document.body.classList.contains('dark-mode')) {
+                localStorage.setItem('theme', 'dark');
+            } else {
+                localStorage.setItem('theme', 'light');
+            }
+        });
+
+        // --- NEW: Apply saved theme on page load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.body.classList.add('dark-mode');
+            }
+            // Initial load
+            resetEnvironment(false);
+        });
+
+    </script>
+</body>
+</html>
